@@ -18,8 +18,8 @@ htmlcov/
 .tox/
 
 # ── ML model artifacts ──────────────────────────────────────
-model/*.pkl
-model/*.joblib
+backend/ml/*.pkl
+backend/ml/*.joblib
 *.pkl
 *.joblib
 
@@ -61,4 +61,4 @@ desktop.ini
 
 # ── Uploaded files (user CSV uploads) ────────────────────────
 backend/uploads/
-*.csv
+# Removed *.csv — keep sample files committable for portfolio demos
