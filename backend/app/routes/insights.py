@@ -1,49 +1,48 @@
-from flask import Blueprint, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from app import db
-from app.models.db_models import Insight, Transaction
-from app.utils.openai_client import generate_weekly_insight
 from datetime import date, timedelta
 
+from flask import Blueprint, jsonify, request
+
+from app.extensions import db
+from app.models.db_models import Insight, utcnow
+from app.services.ai import generate_report, providers_status, week_bounds
+from app.utils.errors import ApiError
+from app.utils.security import current_user, login_required
+
 insights_bp = Blueprint("insights", __name__)
+DAILY_LIMIT = 5  # protects the free-tier API quota
 
-@insights_bp.route("/generate", methods=["POST"])
-@jwt_required()
+
+@insights_bp.get("/")
+@login_required
+def list_insights():
+    user = current_user()
+    rows = (Insight.query.filter_by(user_id=user.id)
+            .order_by(Insight.created_at.desc()).limit(12).all())
+    return jsonify({"insights": [i.to_dict() for i in rows], "providers": providers_status()})
+
+
+@insights_bp.post("/generate")
+@login_required
 def generate():
-    user_id = int(get_jwt_identity())
-    week_start = date.today() - timedelta(days=date.today().weekday())
+    """Returns this week's report (cached). Pass {"force": true} to regenerate.
+    Demo users can generate too (it's the best part of the demo), but it's rate-limited."""
+    user = current_user()
+    force = bool((request.get_json(silent=True) or {}).get("force"))
+    w_start, w_end = week_bounds(date.today())
 
-    # Check if already generated this week
-    existing = Insight.query.filter_by(user_id=user_id, week_start=week_start).first()
-    if existing:
-        return jsonify({"insight": existing.content, "cached": True})
+    latest = (Insight.query.filter_by(user_id=user.id, period_start=w_start)
+              .order_by(Insight.created_at.desc()).first())
+    if latest and not force:
+        return jsonify({"insight": latest.to_dict(), "cached": True})
 
-    # Gather stats
-    txns = Transaction.query.filter_by(user_id=user_id).all()
-    by_category = {}
-    for t in txns:
-        by_category[t.category] = by_category.get(t.category, 0) + abs(t.amount)
-    stats = {
-        "by_category": by_category,
-        "total_spent": sum(abs(t.amount) for t in txns if t.amount < 0),
-        "total_income": sum(t.amount for t in txns if t.amount > 0),
-        "transaction_count": len(txns),
-    }
-    tx_dicts = [{"description": t.description, "amount": t.amount, "category": t.category} for t in txns[-50:]]
+    recent = Insight.query.filter(Insight.user_id == user.id,
+                                  Insight.created_at >= utcnow() - timedelta(days=1)).count()
+    if recent >= DAILY_LIMIT:
+        raise ApiError("You've hit today's report limit. Try again tomorrow.", 429)
 
-    content = generate_weekly_insight(stats, tx_dicts)
-    insight = Insight(user_id=user_id, week_start=week_start, content=content)
+    content, source, _ctx = generate_report(user)
+    insight = Insight(user_id=user.id, period_start=w_start, period_end=w_end,
+                      content=content, source=source)
     db.session.add(insight)
     db.session.commit()
-
-    return jsonify({"insight": content, "cached": False})
-
-@insights_bp.route("/", methods=["GET"])
-@jwt_required()
-def list_insights():
-    user_id = int(get_jwt_identity())
-    insights = Insight.query.filter_by(user_id=user_id).order_by(Insight.week_start.desc()).limit(8).all()
-    return jsonify([
-        {"id": i.id, "week_start": str(i.week_start), "content": i.content}
-        for i in insights
-    ])
+    return jsonify({"insight": insight.to_dict(), "cached": False}), 201

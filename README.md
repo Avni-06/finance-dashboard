@@ -1,309 +1,167 @@
-# FinSight — Personal Finance Dashboard with AI Insights
+# FinSight
 
-> Full-stack finance tracker with ML auto-categorization, spending charts, budget alerts, and Groq-powered weekly AI money reports.
+A money tracker built around how people actually earn, starting with students.
 
-**Tech stack:** React · Recharts · Python Flask · scikit-learn · Groq API (Llama 3.3) · PostgreSQL
+Import a bank statement and FinSight sorts every UPI payment into categories, then answers
+the question a student on pocket money actually has: **"Will this last until my next allowance?"**
+Salaried employees and freelancers get dashboards built for their kind of income too.
+
+![Student dashboard](docs/screenshots/student-dashboard.png)
+
+**Try it without signing up:** open the app and click *Student demo*, *Salaried demo* or
+*Freelancer demo*. Each is a read-only account with 6 months of realistic sample data.
 
 ---
 
-## Project Structure
+## What it does
+
+### For everyone
+- **Bank statement import.** Real exports from HDFC, SBI, ICICI and UPI apps: junk rows above the
+  header, separate debit/credit columns, `Dr/Cr` flags, `₹1,234.50` / `(120.00)` amounts, mixed
+  date formats. Re-uploading the same file doesn't create duplicates.
+- **Automatic categories that learn.** Change Swiggy to "Fun" once and every past and future
+  Swiggy payment follows.
+- **Budgets** with warnings at 80% and alerts at 100%, plus suggested limits from your income.
+- **Recurring payment detection.** Netflix, rent, EMIs and SIPs are found automatically, with
+  their next due date.
+- **Unusual spending alerts.** "Food is at ₹4,190, 2.4× your usual by this day of the month."
+- **Weekly report** in plain words with one concrete action, written by an LLM.
+- **Savings goals** that tell you how much to save per month to hit the date.
+- Dark and light themes, works on mobile.
+
+### Built around how you earn
+
+| | Student | Salaried | Freelancer |
+|---|---|---|---|
+| Headline number | Safe to spend today | Safe to spend until payday | Average month |
+| Special views | Money runway, no-spend streak, semester costs kept out of daily money, income sources (allowance, stipend, scholarship) | 50/30/20 check, EMI load, emergency fund target | Income swings, tax set-aside, top clients |
+| Categories | Food & Canteen, Hostel & Rent, Books & Stationery, Fees, Events & Hackathons… | Rent, Groceries, Bills, EMI & Loans, Investments… | Business Expenses, Software & Tools, Taxes… |
+
+### Roles
+| Role | How it's created | Can do |
+|---|---|---|
+| **User** | Sign up | Everything on their own data |
+| **Demo** | "Try demo" button | Read-only tour with sample data; all writes are blocked server-side |
+| **Admin** | `python manage.py create-admin` only, never via sign-up | Platform stats, deactivate accounts, view model metrics, retrain the model. **Cannot see anyone's transactions.** |
+
+---
+
+## How categorisation works
+
+```mermaid
+flowchart LR
+    A["UPI/DR/4123.../SWIGGY/YESB/swiggy@ybl"] --> B[Clean narration<br/>+ merchant key]
+    B --> C{User rule<br/>for merchant?}
+    C -- yes --> R[Category]
+    C -- no --> D{Known brand<br/>keyword?}
+    D -- yes --> R
+    D -- no --> E[TF-IDF + Logistic Regression<br/>masked to income/expense]
+    E --> F{Confident?}
+    F -- yes --> R
+    F -- no --> G[Other + 'Review' flag]
+```
+
+- The model predicts one of ~27 profile-independent **concepts** (food, rent, stipend…), which are
+  then mapped to each profile's categories. One model serves students, employees and freelancers.
+- Training data is synthetic but shaped like real bank narrations (UPI, NEFT, POS, ACH formats with
+  reference numbers, IFSC codes and VPAs).
+- **Evaluation uses a group split by merchant**, so the test set only contains merchants the model has
+  never seen. Current score: **~85% accuracy, 0.86 macro-F1** on unseen merchants. Known brands are
+  handled by rules, so real-world accuracy is higher.
+- User corrections are stored as merchant rules immediately, and an admin can retrain the model with
+  all corrections included (each counts 3× a synthetic example).
+
+## Weekly report: free LLMs with a fallback
+
+Provider chain: **Groq (Llama 3.3 70B) → Google Gemini → built-in rules.** Both LLMs have free tiers.
+If no key is set or a provider fails, the rule-based writer produces the report, so the feature never
+breaks in a demo. Only aggregated numbers are sent to the LLM, never transaction descriptions or emails.
+Reports are cached per week and rate-limited to protect the free quota.
+
+---
+
+## Tech stack
+
+**Frontend:** React 18, Vite, Tailwind CSS, Recharts, React Router
+**Backend:** Flask, SQLAlchemy, JWT auth, pandas
+**ML:** scikit-learn (TF-IDF word + char n-grams, Logistic Regression)
+**Database:** SQLite locally, PostgreSQL (Neon) in production
+**Testing/CI:** pytest (34 tests), GitHub Actions
 
 ```
 finance-dashboard/
 ├── backend/
-│   ├── app.py                  # Flask app factory
-│   ├── requirements.txt
-│   ├── .env.example
-│   ├── models/
-│   │   └── models.py           # SQLAlchemy models
-│   ├── routes/
-│   │   ├── transactions.py     # CRUD + CSV upload + summary
-│   │   ├── budgets.py          # Budget goals + alerts
-│   │   └── insights.py         # AI weekly reports (Groq)
-│   └── ml/
-│       └── classifier.py       # scikit-learn Naive Bayes classifier
+│   ├── app/
+│   │   ├── ml/            # concepts, synthetic dataset, training, hybrid classifier
+│   │   ├── models/        # SQLAlchemy models
+│   │   ├── routes/        # auth, transactions, budgets+goals, dashboard, insights, admin
+│   │   ├── services/      # analytics, AI reports, demo seeding, import logic
+│   │   └── utils/         # CSV parser, merchant cleaning, validation, security decorators
+│   ├── tests/
+│   ├── manage.py          # create-admin, seed-demo, train
+│   └── run.py
 ├── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── main.jsx
-│   │   ├── index.css           # CSS variables (dark/light theme)
-│   │   ├── components/
-│   │   │   ├── Sidebar.jsx
-│   │   │   └── StatCard.jsx
-│   │   ├── pages/
-│   │   │   ├── Dashboard.jsx   # Overview, charts, tips
-│   │   │   ├── Transactions.jsx # Add/upload/filter transactions
-│   │   │   ├── Budgets.jsx     # Budget tracker with progress bars
-│   │   │   └── Insights.jsx    # AI weekly money reports
-│   │   ├── hooks/
-│   │   │   └── useTheme.jsx    # Dark/light toggle with persistence
-│   │   └── utils/
-│   │       ├── api.js          # Axios API client
-│   │       └── categories.js   # Category colors, icons, formatters
-│   ├── package.json
-│   ├── vite.config.js
-│   └── vercel.json
-├── render.yaml                 # Render deployment config
-├── .gitignore
-└── README.md
+│   └── src/
+│       ├── components/    # layout, charts, runway track, dialogs
+│       ├── pages/         # dashboard, transactions, budgets, goals, insights, admin…
+│       ├── context/       # auth
+│       └── lib/           # api client, formatting, theme
+└── render.yaml
 ```
 
 ---
 
-## Prerequisites
+## Run it locally (Windows, macOS, Linux)
 
-- **Python 3.11+** — [python.org](https://python.org)
-- **Node.js 18+** — [nodejs.org](https://nodejs.org)
-- **PostgreSQL** — [postgresql.org](https://postgresql.org) or use [Neon](https://neon.tech) (free cloud)
-- **Groq API key** — Free at [console.groq.com](https://console.groq.com)
+Needs **Python 3.11+** and **Node 18+**. No database install needed: it uses SQLite locally.
 
----
-
-## Local Setup
-
-### Step 1 — Clone and enter the project
-
-```bash
-git clone https://github.com/YOUR_USERNAME/finance-dashboard.git
-cd finance-dashboard
-```
-
----
-
-### Step 2 — Backend setup
-
+**1. Backend** (terminal 1)
 ```bash
 cd backend
-```
-
-**Create and activate virtual environment (Git Bash on Windows):**
-
-```bash
 python -m venv venv
-source venv/Scripts/activate
+venv\Scripts\activate            # macOS/Linux: source venv/bin/activate
+pip install -r requirements-dev.txt
+copy .env.example .env           # macOS/Linux: cp .env.example .env
+python run.py                    # http://localhost:5000/api/health
 ```
+The classifier trains itself on first use (about 10 seconds). Add a free `GROQ_API_KEY`
+(console.groq.com) or `GEMINI_API_KEY` (aistudio.google.com) to `.env` for LLM-written reports.
 
-You should see `(venv)` in your terminal prompt.
-
-**Install dependencies:**
-
+**2. Frontend** (terminal 2)
 ```bash
-pip install -r requirements.txt
-```
-
-**Create your `.env` file:**
-
-```bash
-cp .env.example .env
-```
-
-Open `backend/.env` and fill in your values:
-
-```env
-GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxx        # from console.groq.com
-DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/finance_dashboard
-SECRET_KEY=any-random-string-here-like-abc123xyz
-FLASK_ENV=development
-```
-
-**Create the PostgreSQL database:**
-
-Open a new terminal and run:
-
-```bash
-psql -U postgres
-```
-
-Then inside psql:
-
-```sql
-CREATE DATABASE finance_dashboard;
-\q
-```
-
-**Run the backend:**
-
-```bash
-python app.py
-```
-
-You should see:
-```
-* Running on http://127.0.0.1:5000
-```
-
-Test it: open `http://localhost:5000/api/health` in your browser — should show `{"status": "ok"}`.
-
----
-
-### Step 3 — Frontend setup
-
-Open a **new Git Bash terminal** and run:
-
-```bash
-cd finance-dashboard/frontend
+cd frontend
 npm install
+npm run dev                      # http://localhost:5173
 ```
 
-**Create your `.env` file:**
-
+**3. Optional**
 ```bash
-cp .env.example .env
+python manage.py create-admin --email admin@example.com   # then log in at /login
+python manage.py seed-demo                                 # rebuild demo data
+python -m pytest -q                                        # run the tests
 ```
+A sample statement to import is in `frontend/public/sample-statement.csv`.
 
-The default `frontend/.env` works for local dev:
-```env
-VITE_API_URL=http://localhost:5000/api
-```
+## Deploy (free)
 
-**Run the frontend:**
+1. **Database:** create a free Postgres database on [Neon](https://neon.tech) and copy its connection string.
+2. **API on Render:** New → Blueprint → pick this repo (uses `render.yaml`). Fill in `DATABASE_URL`,
+   `CORS_ORIGINS` (your Vercel URL) and optionally `GROQ_API_KEY` / `GEMINI_API_KEY`.
+3. **Frontend on Vercel:** import the repo, root directory `frontend`, framework Vite, and set
+   `VITE_API_URL` to `https://<your-render-app>.onrender.com/api`.
 
-```bash
-npm run dev
-```
+Render's free tier sleeps after 15 minutes, so the first request can take ~30 seconds.
 
-Open `http://localhost:5173` in your browser. Done!
+## Security notes
+- Passwords hashed with Werkzeug (PBKDF2); JWTs expire after 7 days.
+- Roles are checked against the database on every request, so deactivation applies immediately.
+- Every query is scoped to the logged-in user; tests cover cross-user access (IDOR).
+- Role can't be set at sign-up; admins are created from the command line only.
 
----
+## Screenshots
 
-## Features Walkthrough
+| Landing | Transactions (light mode) |
+|---|---|
+| ![Landing](docs/screenshots/landing.png) | ![Transactions](docs/screenshots/transactions-light.png) |
 
-### Dashboard
-- Total spent, income, net savings for the current month
-- 6-month area chart (income vs expenses)
-- Spending breakdown pie chart by category
-- Budget alerts (yellow = 80%, red = 100%+)
-- AI spending tips from Groq
-- 5 most recent transactions
-
-### Transactions
-- **Manual entry** — date, description, amount, type, category
-- **CSV upload** — drag and drop any bank export CSV; auto-detects date/description/amount columns
-- ML auto-categorizes every transaction using a trained Naive Bayes classifier
-- Click any category tag to manually override it
-- Filter by category or type (income/expense)
-- Paginated table
-
-### Budgets
-- Set monthly limits per category
-- Progress bars that turn amber at 80%, red at 100%
-- "Over by ₹X" alerts shown per card
-- Summary totals across all budgets
-
-### AI Insights
-- Click "Generate report" to get a Groq/Llama-powered weekly money analysis
-- Covers: weekly summary, where money went, budget check, one actionable tip
-- Stores all past weekly reports for history
-
----
-
-## CSV Format
-
-Your bank CSV needs (in any column order, any capitalization):
-- A **date** column (any common date format works)
-- A **description/narration/merchant** column  
-- An **amount/debit/credit** column (handles ₹ and $ symbols, commas)
-
-**Example:**
-```csv
-Date,Description,Amount
-2024-01-15,Swiggy Food Order,-450
-2024-01-16,Salary Credit,50000
-2024-01-17,Uber Ride,-120
-```
-
----
-
-## Deployment
-
-### Backend → Render (Free tier)
-
-1. Push your code to GitHub (see GitHub section below)
-2. Go to [render.com](https://render.com) → New → Web Service
-3. Connect your GitHub repo
-4. Settings:
-   - **Root directory:** `backend`
-   - **Build command:** `pip install -r requirements.txt`
-   - **Start command:** `gunicorn "app:create_app()" --bind 0.0.0.0:$PORT`
-5. Add environment variables in Render dashboard:
-   - `GROQ_API_KEY` → your Groq key
-   - `DATABASE_URL` → your PostgreSQL URL (Render PostgreSQL or Neon)
-   - `SECRET_KEY` → any random string
-   - `FLASK_ENV` → `production`
-6. Add a **PostgreSQL** database in Render (free tier available) or use [Neon.tech](https://neon.tech)
-7. Copy the database connection string into `DATABASE_URL`
-
-> Render free tier spins down after 15 min inactivity — first request may take ~30 seconds to wake up.
-
----
-
-### Frontend → Vercel (Free tier)
-
-1. Go to [vercel.com](https://vercel.com) → New Project
-2. Import your GitHub repo
-3. Settings:
-   - **Root directory:** `frontend`
-   - **Framework preset:** Vite
-4. Add environment variable:
-   - `VITE_API_URL` → your Render backend URL, e.g. `https://finsight-backend.onrender.com/api`
-5. Deploy!
-
-Your app will be live at `https://your-project.vercel.app`
-
----
-
-## Push to GitHub
-
-```bash
-# In the root finance-dashboard/ folder
-cd finance-dashboard
-
-git init
-git add .
-git commit -m "feat: initial finance dashboard with AI insights"
-
-# Create a new repo on github.com, then:
-git remote add origin https://github.com/YOUR_USERNAME/finance-dashboard.git
-git branch -M main
-git push -u origin main
-```
-
-### Recommended commit conventions (same as your mock interview project):
-```
-feat: add CSV upload with auto-categorization
-fix: budget percentage calculation edge case
-chore: add render.yaml deployment config
-docs: update README with Neon DB setup
-```
-
----
-
-## Resume Description
-
-> **Personal Finance Dashboard with AI Insights** | React, Python Flask, scikit-learn, Groq API, PostgreSQL
->
-> Built a full-stack finance tracker where users upload bank CSV statements or manually log transactions. Implemented a Naive Bayes ML classifier (scikit-learn) that auto-categorizes transactions into 11 spending categories. Integrated Groq's Llama 3.3-70b model for weekly AI-generated money reports in plain language. Features include interactive Recharts visualizations, budget goal tracking with real-time alerts, dark/light theme toggle, and paginated transaction history. Deployed backend on Render with PostgreSQL and frontend on Vercel.
-
----
-
-## Troubleshooting
-
-**`psycopg2` install error on Windows:**
-```bash
-pip install psycopg2-binary --break-system-packages
-```
-
-**Flask not found after venv activation:**
-```bash
-# Make sure you're in the backend folder with venv active
-which python  # should show .../venv/Scripts/python
-```
-
-**CORS error in browser:**
-Check that `VITE_API_URL` in frontend `.env` matches your backend URL exactly.
-
-**CSV not parsing:**
-Make sure your CSV has clear column names. The parser looks for keywords like "date", "desc", "narration", "amount", "debit" in column names.
-
-**Groq API error:**
-Get a free key at [console.groq.com](https://console.groq.com) — no credit card required, unlike OpenAI.
+![Admin](docs/screenshots/admin.png)
