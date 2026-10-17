@@ -23,6 +23,7 @@ import numpy as np
 from app.ml.concepts import (
     KEYWORDS, CONCEPT_TO_CATEGORY, INCOME_CONCEPTS, EXPENSE_CONCEPTS, concept_type,
 )
+from app.constants import categories_for
 from app.ml.train import MODEL_PATH, METRICS_PATH, train
 from app.utils.merchant import clean_text, merchant_key
 
@@ -79,6 +80,20 @@ def rule_concept(cleaned: str, tx_type: str) -> str | None:
     return best[1] if best else None
 
 
+def _user_rule_for(merchant: str, user_rules: dict) -> str | None:
+    """Exact merchant match, else the longest rule that is a word-prefix
+    ("SWIGGY" rule also covers "SWIGGY LATE NIGHT"). O(rules) per row."""
+    if not merchant or not user_rules:
+        return None
+    if merchant in user_rules:
+        return user_rules[merchant]
+    best = None
+    for key, cat in user_rules.items():
+        if merchant.startswith(key + " ") and (best is None or len(key) > len(best[0])):
+            best = (key, cat)
+    return best[1] if best else None
+
+
 def _fallback(tx_type: str) -> str:
     return "Other Income" if tx_type == "income" else "Other"
 
@@ -88,6 +103,7 @@ def categorize_many(items: list[dict], profile_type: str, user_rules: dict | Non
     Returns one dict per item: category, concept, confidence, source, merchant."""
     profile_type = profile_type or "student"
     mapping = CONCEPT_TO_CATEGORY[profile_type]
+    valid = categories_for(profile_type)
     user_rules = user_rules or {}
     results: list[dict | None] = [None] * len(items)
     need_ml = []
@@ -97,8 +113,9 @@ def categorize_many(items: list[dict], profile_type: str, user_rules: dict | Non
         merchant = merchant_key(item["description"])
         tx_type = item["type"]
 
-        if merchant and merchant in user_rules:
-            results[i] = {"category": user_rules[merchant], "concept": None,
+        rule_cat = _user_rule_for(merchant, user_rules)
+        if rule_cat and rule_cat in valid[tx_type]:
+            results[i] = {"category": rule_cat, "concept": None,
                           "confidence": 1.0, "source": "user_rule", "merchant": merchant}
             continue
         concept = rule_concept(cleaned, tx_type)
