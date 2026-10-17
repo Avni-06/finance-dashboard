@@ -44,13 +44,13 @@ BUDGET_TEMPLATES = {
         "Shopping": 0.10, "Fun": 0.10, "Health": 0.05,
     },
     "employee": {
-        "Rent & Housing": 0.25, "Food & Dining": 0.08, "Groceries": 0.08,
+        "Rent & Housing": 0.30, "Food & Dining": 0.08, "Groceries": 0.08,
         "Transport": 0.05, "Bills & Utilities": 0.05, "Shopping": 0.07,
         "Entertainment": 0.05, "Investments": 0.20,
     },
     "freelancer": {
         "Business Expenses": 0.10, "Software & Tools": 0.05, "Taxes": 0.15,
-        "Food & Dining": 0.10, "Rent & Housing": 0.25, "Entertainment": 0.05,
+        "Food & Dining": 0.10, "Rent & Housing": 0.27, "Entertainment": 0.05,
     },
 }
 

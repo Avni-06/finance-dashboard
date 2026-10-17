@@ -124,18 +124,21 @@ def detect_recurring(txns, today: date) -> list[dict]:
     return sorted(found, key=lambda r: r["days_until"])
 
 
-def detect_anomalies(txns, y: int, m: int) -> list[dict]:
-    """Category spend this month vs average of the previous 3 months."""
+def detect_anomalies(txns, y: int, m: int, today: date) -> list[dict]:
+    """Category spend this month vs the average of the previous 3 months.
+    For the running month we compare against the usual spend *by this day*
+    of the month, so a half-finished month isn't compared to full ones."""
     cur = defaultdict(float)
     prev = defaultdict(lambda: [0.0, 0.0, 0.0])
     prev_months = [shift_month(y, m, -i) for i in (1, 2, 3)]
+    running = (y, m) == (today.year, today.month)
     for t in txns:
-        if t.type != "expense":
+        if t.type != "expense" or t.category in ("Other", None):
             continue
         key = (t.date.year, t.date.month)
         if key == (y, m):
             cur[t.category] += t.amount
-        elif key in prev_months:
+        elif key in prev_months and (not running or t.date.day <= today.day):
             prev[t.category][prev_months.index(key)] += t.amount
     out = []
     for cat, amount in cur.items():
@@ -162,17 +165,25 @@ def budget_status(user_id: int, month_txns) -> list[dict]:
 
 
 # ---------- profile-specific blocks ----------
-def money_cycle(user: User, txns, today: date, exclude: set[str] = frozenset()) -> dict:
-    """Runway + safe-to-spend for the current allowance/salary cycle."""
+def money_cycle(user: User, txns, today: date, exclude: set[str] = frozenset(),
+                fixed: set[str] = frozenset()) -> dict:
+    """Runway + safe-to-spend for the current allowance/salary cycle.
+
+    exclude: categories ignored completely (student semester fees are paid
+             from a separate parent transfer).
+    fixed:   commitments (rent, EMI, SIP) that reduce the money left but are
+             one-off per cycle, so they don't count towards the daily burn.
+    """
     start, nxt = cycle_bounds(today, user.income_day)
-    in_cycle = [t for t in txns if start <= t.date <= today]
+    in_cycle = [t for t in txns if start <= t.date <= today and t.category not in exclude]
     received = sum(t.amount for t in in_cycle if t.type == "income")
-    spent = sum(t.amount for t in in_cycle if t.type == "expense" and t.category not in exclude)
+    spent = sum(t.amount for t in in_cycle if t.type == "expense")
+    variable = sum(t.amount for t in in_cycle if t.type == "expense" and t.category not in fixed)
     base = max(received, user.monthly_income or 0)
     left = base - spent
     days_elapsed = (today - start).days + 1
     days_left = max((nxt - today).days, 1)
-    burn = spent / days_elapsed if days_elapsed else 0
+    burn = variable / days_elapsed if days_elapsed else 0
     runway = (left / burn) if burn > 0 else None
     return {
         "cycle_start": start.isoformat(), "next_income": nxt.isoformat(),
@@ -186,7 +197,8 @@ def money_cycle(user: User, txns, today: date, exclude: set[str] = frozenset()) 
 
 
 def student_block(user: User, txns, today: date) -> dict:
-    cycle = money_cycle(user, txns, today, exclude=SEMESTER_CATEGORIES | {"Hostel & Rent"})
+    cycle = money_cycle(user, txns, today, exclude=SEMESTER_CATEGORIES | {"Hostel & Rent"},
+                        fixed={"Subscriptions"})
     # No-spend streak: days in a row (ending today/yesterday) with no daily spends
     daily = {t.date for t in txns if t.type == "expense"
              and t.category not in SEMESTER_CATEGORIES | {"Hostel & Rent", "Subscriptions"}}
@@ -230,7 +242,7 @@ def employee_block(user: User, txns, month_txns, today: date) -> dict:
     avg_monthly = mean(expenses_by_month.values()) if expenses_by_month else 0
     emi = sum(t.amount for t in month_txns if t.type == "expense" and t.category == "EMI & Loans")
     return {
-        "cycle": money_cycle(user, txns, today),
+        "cycle": money_cycle(user, txns, today, fixed=NEEDS - {"Groceries", "Transport", "Health"} | SAVINGS),
         "rule_50_30_20": {
             "income": _r(income),
             "needs": {"amount": _r(needs), "percent": pct(needs), "target": 50},
@@ -283,7 +295,9 @@ def dashboard(user: User, y: int, m: int, today: date | None = None) -> dict:
     month_txns = [t for t in txns if m_start <= t.date <= m_end]
     py, pm = shift_month(y, m, -1)
     p_start, p_end = month_bounds(py, pm)
-    prev_txns = [t for t in txns if p_start <= t.date <= p_end]
+    running = (y, m) == (today.year, today.month)
+    # Running month: compare with the same days of last month ("vs this point last month")
+    prev_txns = [t for t in txns if p_start <= t.date <= p_end and (not running or t.date.day <= today.day)]
 
     summary = totals(month_txns)
     prev = totals(prev_txns)
@@ -302,7 +316,9 @@ def dashboard(user: User, y: int, m: int, today: date | None = None) -> dict:
         "top_merchants": top_merchants(month_txns),
         "budgets": budget_status(user.id, month_txns),
         "recurring": detect_recurring(txns, today),
-        "anomalies": detect_anomalies(txns, y, m),
+        "anomalies": detect_anomalies(txns, y, m, today),
+        "is_running_month": running,
+        "days_in_view": (min(today, m_end) - m_start).days + 1 if running else (m_end - m_start).days + 1,
         "goals": [g.to_dict() for g in Goal.query.filter_by(user_id=user.id).order_by(Goal.id).all()],
         "has_data": bool(txns),
     }

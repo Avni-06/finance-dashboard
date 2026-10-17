@@ -2,6 +2,8 @@
 Admin/maintenance commands.
 
   python manage.py create-admin --email you@example.com
+  python manage.py seed-demo          # (re)build the 3 demo accounts
+  python manage.py train              # retrain the classifier on synthetic data
 """
 import argparse
 import getpass
@@ -31,12 +33,23 @@ def main():
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("create-admin", help="Create an admin account")
     p.add_argument("--email", required=True)
+    sub.add_parser("seed-demo", help="Rebuild demo accounts with fresh sample data")
+    sub.add_parser("train", help="Retrain the transaction classifier")
     args = parser.parse_args()
 
     app = create_app()
     with app.app_context():
         if args.cmd == "create-admin":
             create_admin(args.email, getpass.getpass("Admin password: "))
+        elif args.cmd == "seed-demo":
+            from app.services.seed import seed_demo_user, DEMO_ACCOUNTS
+            for ptype in DEMO_ACCOUNTS:
+                user = seed_demo_user(ptype)
+                print(f"Seeded {ptype} demo: {user.email}")
+        elif args.cmd == "train":
+            from app.ml.train import train
+            m = train()["metrics"]
+            print(f"Accuracy on unseen merchants: {m['accuracy']:.2%}, macro-F1 {m['macro_f1']:.3f}")
 
 
 if __name__ == "__main__":
