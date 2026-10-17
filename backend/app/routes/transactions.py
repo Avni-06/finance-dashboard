@@ -1,7 +1,7 @@
 import csv
 import io
 import math
-from datetime import date
+from datetime import date, timedelta
 
 from flask import Blueprint, jsonify, request, Response
 from sqlalchemy import func, or_
@@ -115,7 +115,8 @@ def create_transaction():
     description = as_str(data.get("description"), "Description", 1, 255)
     amount = as_float(data.get("amount"), "Amount", 0.01)
     tx_date = as_date(data.get("date"), "Date")
-    if tx_date > date.today():
+    # +1 day of slack: the server may run in UTC while the user is in IST (UTC+5:30)
+    if tx_date > date.today() + timedelta(days=1):
         raise ApiError("Date can't be in the future")
 
     category = data.get("category")
