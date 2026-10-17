@@ -62,27 +62,27 @@ def _profile_lines(ctx: dict) -> list[str]:
     lines = []
     if ptype in ("student", "employee") and "cycle" in p:
         c = p["cycle"]
-        lines.append(f"Money cycle: Rs {c['left']} left of Rs {c['budget']}, {c['days_left']} days until "
-                     f"next income, daily burn Rs {c['daily_burn']}, safe to spend Rs "
+        lines.append(f"Money cycle: ₹{c['left']} left of ₹{c['budget']}, {c['days_left']} days until "
+                     f"next income, daily burn ₹{c['daily_burn']}, safe to spend ₹"
                      f"{c['safe_to_spend_today']}/day, status {c['status']}.")
     if ptype == "student":
-        lines.append(f"No-spend streak: {p['no_spend_streak']} days. Semester costs (6 mo): Rs {p['semester_total']}.")
+        lines.append(f"No-spend streak: {p['no_spend_streak']} days. Semester costs (6 mo): ₹{p['semester_total']}.")
     if ptype == "employee":
         r = p["rule_50_30_20"]
         lines.append(f"50/30/20 this month: needs {r['needs']['percent']}%, wants {r['wants']['percent']}%, "
                      f"savings {r['savings']['percent']}%. EMI {p['emi_to_income']}% of income.")
     if ptype == "freelancer":
-        lines.append(f"Avg monthly income Rs {p['avg_monthly_income']}, volatility {p['income_volatility']}%, "
-                     f"tax set-aside this month Rs {p['tax_set_aside']}.")
+        lines.append(f"Avg monthly income ₹{p['avg_monthly_income']}, volatility {p['income_volatility']}%, "
+                     f"tax set-aside this month ₹{p['tax_set_aside']}.")
     return lines
 
 
 def build_prompt(ctx: dict) -> str:
-    cats = ", ".join(f"{c['category']} Rs {c['amount']}" for c in ctx["week_categories"]) or "no spends"
-    mcats = ", ".join(f"{c['category']} Rs {c['amount']}" for c in ctx["month_categories"]) or "none"
-    budgets = "; ".join(f"{b['category']} at {b['percent']}% of Rs {b['limit']}" for b in ctx["budgets"]) or "all within limits"
+    cats = ", ".join(f"{c['category']} ₹{c['amount']}" for c in ctx["week_categories"]) or "no spends"
+    mcats = ", ".join(f"{c['category']} ₹{c['amount']}" for c in ctx["month_categories"]) or "none"
+    budgets = "; ".join(f"{b['category']} at {b['percent']}% of ₹{b['limit']}" for b in ctx["budgets"]) or "all within limits"
     anomalies = "; ".join(f"{a['category']} {a['ratio']}x usual" for a in ctx["anomalies"]) or "none"
-    upcoming = "; ".join(f"{r['merchant']} Rs {r['amount']} in {r['days_until']} days" for r in ctx["recurring"]) or "none"
+    upcoming = "; ".join(f"{r['merchant']} ₹{r['amount']} in {r['days_until']} days" for r in ctx["recurring"]) or "none"
     m = ctx["month"]
     profile = "\n".join(_profile_lines(ctx))
     return f"""You are {TONE[ctx['profile_type']]}
@@ -90,16 +90,16 @@ def build_prompt(ctx: dict) -> str:
 Write this week's money report for {ctx['name']} using ONLY the numbers below.
 
 DATA
-- Last 7 days spent: Rs {ctx['week_spend']} (previous 7 days: Rs {ctx['prev_week_spend']})
+- Last 7 days spent: ₹{ctx['week_spend']} (previous 7 days: ₹{ctx['prev_week_spend']})
 - Last 7 days by category: {cats}
-- This month so far: income Rs {m['income']}, spent Rs {m['expense']}, savings rate {m['savings_rate']}%
+- This month so far: income ₹{m['income']}, spent ₹{m['expense']}, savings rate {m['savings_rate']}%
 - This month by category: {mcats}
 - Budgets needing attention: {budgets}
 - Unusual spending vs last 3 months: {anomalies}
 - Upcoming recurring payments: {upcoming}
 {profile}
 
-FORMAT (follow exactly, plain text, use "Rs" for rupees, no markdown headers):
+FORMAT (follow exactly, plain text, use ₹ for rupees, no markdown headers):
 Line 1: one-sentence summary of the week.
 Then 3 or 4 lines each starting with "- ": specific observations with numbers. Start with something they did well.
 Last line starting with "Action: " giving ONE concrete thing to do this week.
@@ -145,11 +145,11 @@ def rules_report(ctx: dict) -> str:
         trend = f"{'down' if change < 0 else 'up'} {abs(change):.0f}% from the week before"
     else:
         trend = "your first tracked week"
-    lines = [f"You spent Rs {week:,.0f} in the last 7 days, {trend}."]
+    lines = [f"You spent ₹{week:,.0f} in the last 7 days, {trend}."]
 
     good = []
     if prev and week < prev:
-        good.append(f"- Nice: you spent Rs {prev - week:,.0f} less than the previous week.")
+        good.append(f"- Nice: you spent ₹{prev - week:,.0f} less than the previous week.")
     p = ctx["profile"]
     if ctx["profile_type"] == "student" and p.get("no_spend_streak", 0) >= 2:
         good.append(f"- {p['no_spend_streak']}-day no-spend streak going. Keep it alive!")
@@ -159,37 +159,37 @@ def rules_report(ctx: dict) -> str:
 
     if ctx["week_categories"]:
         top = ctx["week_categories"][0]
-        lines.append(f"- {top['category']} was your biggest spend this week at Rs {top['amount']:,.0f} "
+        lines.append(f"- {top['category']} was your biggest spend this week at ₹{top['amount']:,.0f} "
                      f"({top['share']:.0f}% of the week).")
     for a in ctx["anomalies"][:1]:
-        lines.append(f"- {a['category']} is at Rs {a['amount']:,.0f} this month, {a['ratio']}x your usual Rs {a['usual']:,.0f}.")
+        lines.append(f"- {a['category']} is at ₹{a['amount']:,.0f} this month, {a['ratio']}x your usual ₹{a['usual']:,.0f}.")
     for b in ctx["budgets"][:1]:
-        lines.append(f"- {b['category']} budget is at {b['percent']:.0f}% (Rs {b['spent']:,.0f} of Rs {b['limit']:,.0f}).")
+        lines.append(f"- {b['category']} budget is at {b['percent']:.0f}% (₹{b['spent']:,.0f} of ₹{b['limit']:,.0f}).")
     for r in ctx["recurring"][:1]:
-        lines.append(f"- Heads up: {r['merchant']} (Rs {r['amount']:,.0f}) is due in {r['days_until']} days.")
+        lines.append(f"- Heads up: {r['merchant']} (₹{r['amount']:,.0f}) is due in {r['days_until']} days.")
 
     action = None
     if "cycle" in p and p["cycle"]["status"] in ("at_risk", "broke"):
         c = p["cycle"]
         action = ("Action: Pause non-essential spends until your next credit and review subscriptions."
                   if c["status"] == "broke" else
-                  f"Action: Keep daily spends under Rs {c['safe_to_spend_today']:,.0f} so your money lasts "
+                  f"Action: Keep daily spends under ₹{c['safe_to_spend_today']:,.0f} so your money lasts "
                   f"the {c['days_left']} days until the next credit.")
     elif ctx["anomalies"]:
         a = ctx["anomalies"][0]
         action = (f"Action: Go easy on {a['category']} for the rest of the month. You're already "
-                  f"Rs {a['amount'] - a['usual']:,.0f} above your usual by this point.")
+                  f"₹{a['amount'] - a['usual']:,.0f} above your usual by this point.")
     elif ctx["budgets"]:
         b = ctx["budgets"][0]
         today = date.today()
         days_left = (date(today.year + today.month // 12, today.month % 12 + 1, 1) - today).days
         if b["remaining"] > 0:
-            action = (f"Action: Rs {b['remaining']:,.0f} is left in your {b['category']} budget. That's about "
-                      f"Rs {b['remaining'] / max(days_left, 1):,.0f}/day for the {days_left} days left this month.")
+            action = (f"Action: ₹{b['remaining']:,.0f} is left in your {b['category']} budget. That's about "
+                      f"₹{b['remaining'] / max(days_left, 1):,.0f}/day for the {days_left} days left this month.")
         else:
             action = f"Action: {b['category']} is over budget. Skip it for the rest of the month if you can."
     elif ctx["profile_type"] == "freelancer" and p.get("tax_set_aside"):
-        action = f"Action: Move Rs {p['tax_set_aside']:,.0f} to a separate account for taxes this month."
+        action = f"Action: Move ₹{p['tax_set_aside']:,.0f} to a separate account for taxes this month."
     elif ctx["profile_type"] == "student":
         action = "Action: Try a 2-day no-spend challenge this week (mess food + metro only)."
     else:
