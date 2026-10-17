@@ -62,3 +62,5 @@ desktop.ini
 # ── Uploaded files (user CSV uploads) ────────────────────────
 backend/uploads/
 # Removed *.csv — keep sample files committable for portfolio demos
+# ── Trained model (rebuilt automatically) ─────────────────
+backend/model/
