@@ -1,5 +1,5 @@
 import re
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -67,6 +67,16 @@ def login():
     if not user.is_active:
         raise ApiError("This account has been deactivated", 403)
     return auth_response(user)
+
+
+@auth_bp.post("/demo")
+def demo_login():
+    """One-click demo: logs into a read-only account with 6 months of sample data."""
+    from app.services.seed import ensure_demo_user, DEMO_ACCOUNTS
+    profile_type = (request.get_json(silent=True) or {}).get("profile_type", "student")
+    if profile_type not in DEMO_ACCOUNTS:
+        raise ApiError("Unknown demo profile")
+    return auth_response(ensure_demo_user(profile_type))
 
 
 @auth_bp.get("/me")

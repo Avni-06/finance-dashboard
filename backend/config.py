@@ -38,10 +38,7 @@ class Config:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-
-    # Seed demo accounts automatically on first boot (handy on fresh deploys)
-    AUTO_SEED_DEMO = os.getenv("AUTO_SEED_DEMO", "1") == "1"
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     if APP_ENV == "production" and SECRET_KEY == _DEFAULT_SECRET:
         raise RuntimeError("Set SECRET_KEY in production")
@@ -51,6 +48,5 @@ class TestConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SQLALCHEMY_ENGINE_OPTIONS = {}
-    AUTO_SEED_DEMO = False
     GROQ_API_KEY = None
     GEMINI_API_KEY = None

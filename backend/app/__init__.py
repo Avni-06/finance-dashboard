@@ -21,12 +21,16 @@ def create_app(config_class=Config):
     from app.routes.transactions import tx_bp
     from app.routes.dashboard import dashboard_bp
     from app.routes.budgets import budgets_bp, goals_bp
+    from app.routes.insights import insights_bp
+    from app.routes.admin import admin_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(tx_bp, url_prefix="/api/transactions")
     app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
     app.register_blueprint(budgets_bp, url_prefix="/api/budgets")
     app.register_blueprint(goals_bp, url_prefix="/api/goals")
+    app.register_blueprint(insights_bp, url_prefix="/api/insights")
+    app.register_blueprint(admin_bp, url_prefix="/api/admin")
 
     @app.get("/api/health")
     def health():
