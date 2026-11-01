@@ -1,5 +1,7 @@
 # FinSight
 
+[![CI](https://github.com/Avni-06/finance-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Avni-06/finance-dashboard/actions/workflows/ci.yml)
+
 A money tracker built around how people actually earn, starting with students.
 
 Import a bank statement and FinSight sorts every UPI payment into categories, then answers
@@ -9,16 +11,17 @@ Salaried employees and freelancers get dashboards built for their kind of income
 ![Student dashboard](docs/screenshots/student-dashboard.png)
 
 **Try it without signing up:** open the app and click *Student demo*, *Salaried demo* or
-*Freelancer demo*. Each is a read-only account with 6 months of realistic sample data.
+*Freelancer demo*. Each is a read-only account with 6 months of generated sample data.
 
 ---
 
 ## What it does
 
 ### For everyone
-- **Bank statement import.** Real exports from HDFC, SBI, ICICI and UPI apps: junk rows above the
-  header, separate debit/credit columns, `Dr/Cr` flags, `₹1,234.50` / `(120.00)` amounts, mixed
-  date formats. Re-uploading the same file doesn't create duplicates.
+- **Bank statement import.** Handles junk rows above the header, separate debit/credit columns,
+  `Dr/Cr` flags, `₹1,234.50` / `(120.00)` amounts and mixed date formats. Tested with an HDFC-style
+  layout and two generic CSV layouts. Re-uploading the same file doesn't create duplicates
+  (SHA-256 row fingerprints).
 - **Automatic categories that learn.** Change Swiggy to "Fun" once and every past and future
   Swiggy payment follows.
 - **Budgets** with warnings at 80% and alerts at 100%, plus suggested limits from your income.
@@ -42,7 +45,7 @@ Salaried employees and freelancers get dashboards built for their kind of income
 |---|---|---|
 | **User** | Sign up | Everything on their own data |
 | **Demo** | "Try demo" button | Read-only tour with sample data; all writes are blocked server-side |
-| **Admin** | `python manage.py create-admin` only, never via sign-up | Platform stats, deactivate accounts, view model metrics, retrain the model. **Cannot see anyone's transactions.** |
+| **Admin** | `python manage.py create-admin` only, never via sign-up | Platform stats, user management, model metrics, retrain the model |
 
 ---
 
@@ -61,13 +64,22 @@ flowchart LR
     F -- no --> G[Other + 'Review' flag]
 ```
 
-- The model predicts one of ~27 profile-independent **concepts** (food, rent, stipend…), which are
+- The model predicts one of 27 profile-independent **concepts** (food, rent, stipend…), which are
   then mapped to each profile's categories. One model serves students, employees and freelancers.
-- Training data is synthetic but shaped like real bank narrations (UPI, NEFT, POS, ACH formats with
-  reference numbers, IFSC codes and VPAs).
-- **Evaluation uses a group split by merchant**, so the test set only contains merchants the model has
-  never seen. Current score: **~85% accuracy, 0.86 macro-F1** on unseen merchants. Known brands are
-  handled by rules, so real-world accuracy is higher.
+- **Training data is synthetic:** 4,431 generated bank narrations (1,476 distinct merchants), shaped
+  like real UPI, NEFT, POS and ACH formats with reference numbers, IFSC codes and VPAs. It has not
+  been trained or evaluated on real customer data.
+- **Evaluation uses an 80/20 group split by merchant**, so the test set (888 rows) only contains
+  merchants the model has never seen.
+
+| Model | Accuracy | Macro-F1 |
+|---|---|---|
+| TF-IDF + Logistic Regression (unseen merchants) | **85.0%** | **0.858** |
+| Keyword rules only | 69.3% | 0.732 |
+| Majority class | 6.1% | 0.004 |
+
+- The weakest classes are `shopping` and `transfer_in`, where the model confuses generic merchant
+  names with other categories.
 - User corrections are stored as merchant rules immediately, and an admin can retrain the model with
   all corrections included (each counts 3× a synthetic example).
 
@@ -75,8 +87,9 @@ flowchart LR
 
 Provider chain: **Groq (Llama 3.3 70B) → Google Gemini → built-in rules.** Both LLMs have free tiers.
 If no key is set or a provider fails, the rule-based writer produces the report, so the feature never
-breaks in a demo. Only aggregated numbers are sent to the LLM, never transaction descriptions or emails.
-Reports are cached per week and rate-limited to protect the free quota.
+breaks in a demo. Only aggregated spending figures, your first name and recurring merchant names are
+sent to the LLM, never raw transactions or emails. Reports are cached per week and limited to 5 per
+user per day to protect the free quota.
 
 ---
 
@@ -85,8 +98,8 @@ Reports are cached per week and rate-limited to protect the free quota.
 **Frontend:** React 18, Vite, Tailwind CSS, Recharts, React Router
 **Backend:** Flask, SQLAlchemy, JWT auth, pandas
 **ML:** scikit-learn (TF-IDF word + char n-grams, Logistic Regression)
-**Database:** SQLite locally, PostgreSQL (Neon) in production
-**Testing/CI:** pytest (34 tests), GitHub Actions
+**Database:** SQLite locally, PostgreSQL supported through `DATABASE_URL` (Neon recommended)
+**Testing/CI:** pytest (34 tests), GitHub Actions (backend tests + frontend build)
 
 ```
 finance-dashboard/
@@ -139,6 +152,7 @@ npm run dev                      # http://localhost:5173
 python manage.py create-admin --email admin@example.com   # then log in at /login
 python manage.py seed-demo                                 # rebuild demo data
 python -m pytest -q                                        # run the tests
+python -m app.ml.train                                     # retrain and print accuracy
 ```
 A sample statement to import is in `frontend/public/sample-statement.csv`.
 
@@ -148,15 +162,22 @@ A sample statement to import is in `frontend/public/sample-statement.csv`.
 2. **API on Render:** New → Blueprint → pick this repo (uses `render.yaml`). Fill in `DATABASE_URL`,
    `CORS_ORIGINS` (your Vercel URL) and optionally `GROQ_API_KEY` / `GEMINI_API_KEY`.
 3. **Frontend on Vercel:** import the repo, root directory `frontend`, framework Vite, and set
-   `VITE_API_URL` to `https://<your-render-app>.onrender.com/api`.
+   `VITE_API_URL` to `https://<your-render-app>.onrender.com`.
 
 Render's free tier sleeps after 15 minutes, so the first request can take ~30 seconds.
 
 ## Security notes
-- Passwords hashed with Werkzeug (PBKDF2); JWTs expire after 7 days.
+- Passwords hashed with Werkzeug (scrypt); JWTs expire after 7 days.
 - Roles are checked against the database on every request, so deactivation applies immediately.
 - Every query is scoped to the logged-in user; tests cover cross-user access (IDOR).
 - Role can't be set at sign-up; admins are created from the command line only.
+- Uploads are limited to 2 MB and 5,000 rows.
+
+## Known limitations
+- Real bank exports other than HDFC-style layouts are not yet verified.
+- The classifier is trained on synthetic data, so accuracy on real statements may differ.
+- No login rate limiting, and no database migrations (tables are created on first run).
+- The JWT is stored in `localStorage`.
 
 ## Screenshots
 
