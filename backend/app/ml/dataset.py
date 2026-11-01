@@ -137,7 +137,7 @@ def build_dataset(seed: int = 42, generic_per_pattern: int = 6, variants: int = 
                     merchants.append(pattern.format(P=_person(rng)))
                 else:
                     merchants.append(pattern.format(N=rng.choice(NAMES)))
-        for m in set(merchants):
+        for m in sorted(set(merchants)):
             for _ in range(variants):
                 rows.append((m, _fill(rng.choice(templates), m, rng), concept))
     rng.shuffle(rows)
