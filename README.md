@@ -162,7 +162,7 @@ A sample statement to import is in `frontend/public/sample-statement.csv`.
 2. **API on Render:** New → Blueprint → pick this repo (uses `render.yaml`). Fill in `DATABASE_URL`,
    `CORS_ORIGINS` (your Vercel URL) and optionally `GROQ_API_KEY` / `GEMINI_API_KEY`.
 3. **Frontend on Vercel:** import the repo, root directory `frontend`, framework Vite, and set
-   `VITE_API_URL` to `https://<your-render-app>.onrender.com`.
+   `VITE_API_URL` to `https://<your-render-app>.onrender.com/api`.
 
 Render's free tier sleeps after 15 minutes, so the first request can take ~30 seconds.
 
